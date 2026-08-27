@@ -21,7 +21,7 @@ runner without putting tokens in shell history:
 
 ```bash
 python3 mission_control_agent.py configure
-python3 mission_control_agent.py run
+python3 mission_control_agent.py install
 ```
 
 The first command securely prompts for the one-time machine token, the private
@@ -29,6 +29,12 @@ Sites connection token when required, and allowed folders. Configuration is
 stored in `~/.mission-control/agent.json` with user-only permissions where the
 operating system supports them. Revoke a machine from Mission Control at any
 time to invalidate its machine token and cancel queued work.
+
+`install` creates a user-level background service—LaunchAgent on macOS, a login
+task on Windows, or a systemd user service on Linux—and starts it immediately.
+Use `python3 mission_control_agent.py status` to inspect it or
+`python3 mission_control_agent.py uninstall` to remove the service while
+preserving the local configuration.
 
 ## macOS — clone, update, and scan
 

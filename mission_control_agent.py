@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import plistlib
 import queue
 import re
 import signal
@@ -78,7 +79,7 @@ def configure(config_path: Path) -> None:
     except OSError:
         pass
     print(f"Configuration saved to {config_path}")
-    print("Start the runner with: python3 mission_control_agent.py run")
+    print("Install the always-on runner with: python3 mission_control_agent.py install")
 
 
 def load_config(config_path: Path) -> dict[str, Any]:
@@ -237,6 +238,103 @@ def bounded(parts: list[str]) -> str:
     return "".join(parts)[-MAX_OUTPUT:]
 
 
+def service_name() -> str:
+    return "com.techj3ff.mission-control-agent" if sys.platform == "darwin" else "MissionControlAgent"
+
+
+def install_service(config_path: Path) -> None:
+    load_config(config_path)
+    script_path = Path(__file__).resolve()
+    config_path = config_path.expanduser().resolve()
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = CONFIG_DIR / "agent.log"
+    if sys.platform == "darwin":
+        launch_dir = Path.home() / "Library" / "LaunchAgents"
+        launch_dir.mkdir(parents=True, exist_ok=True)
+        plist_path = launch_dir / f"{service_name()}.plist"
+        payload = {
+            "Label": service_name(),
+            "ProgramArguments": [sys.executable, str(script_path), "run", "--config", str(config_path)],
+            "RunAtLoad": True,
+            "KeepAlive": True,
+            "ThrottleInterval": 10,
+            "StandardOutPath": str(log_path),
+            "StandardErrorPath": str(log_path),
+            "ProcessType": "Background",
+        }
+        plist_path.write_bytes(plistlib.dumps(payload))
+        domain = f"gui/{os.getuid()}"
+        subprocess.run(["launchctl", "bootout", domain, str(plist_path)], capture_output=True, check=False)
+        subprocess.run(["launchctl", "bootstrap", domain, str(plist_path)], check=True)
+        subprocess.run(["launchctl", "enable", f"{domain}/{service_name()}"], check=True)
+        print(f"Always-on LaunchAgent installed. Log: {log_path}")
+        return
+    if os.name == "nt":
+        launcher = CONFIG_DIR / "run-agent.cmd"
+        launcher.write_text(
+            f'@echo off\r\n"{sys.executable}" "{script_path}" run --config "{config_path}" >> "{log_path}" 2>&1\r\n',
+            encoding="utf-8",
+        )
+        task_command = f'cmd.exe /d /c ""{launcher}""'
+        created = subprocess.run(
+            ["schtasks", "/Create", "/SC", "ONLOGON", "/TN", service_name(), "/TR", task_command, "/RL", "LIMITED", "/F"],
+            capture_output=True, text=True, check=False,
+        )
+        if created.returncode:
+            raise AgentError(f"Task Scheduler could not install the runner: {created.stderr.strip() or created.stdout.strip()}")
+        subprocess.run(["schtasks", "/Run", "/TN", service_name()], capture_output=True, check=False)
+        print(f"Always-on login task installed and started. Log: {log_path}")
+        return
+    systemd_dir = Path.home() / ".config" / "systemd" / "user"
+    systemd_dir.mkdir(parents=True, exist_ok=True)
+    service_path = systemd_dir / "mission-control-agent.service"
+    service_path.write_text(
+        "\n".join([
+            "[Unit]", "Description=Mission Control Agent", "After=network-online.target", "",
+            "[Service]", f'ExecStart="{sys.executable}" "{script_path}" run --config "{config_path}"',
+            "Restart=always", "RestartSec=10", f'StandardOutput=append:{log_path}', f'StandardError=append:{log_path}', "",
+            "[Install]", "WantedBy=default.target", "",
+        ]),
+        encoding="utf-8",
+    )
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+    subprocess.run(["systemctl", "--user", "enable", "--now", service_path.name], check=True)
+    print(f"Always-on user service installed. Log: {log_path}")
+
+
+def uninstall_service() -> None:
+    if sys.platform == "darwin":
+        plist_path = Path.home() / "Library" / "LaunchAgents" / f"{service_name()}.plist"
+        subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}", str(plist_path)], capture_output=True, check=False)
+        if plist_path.exists():
+            plist_path.unlink()
+        print("Mission Control LaunchAgent removed. Configuration was preserved.")
+        return
+    if os.name == "nt":
+        subprocess.run(["schtasks", "/End", "/TN", service_name()], capture_output=True, check=False)
+        subprocess.run(["schtasks", "/Delete", "/TN", service_name(), "/F"], capture_output=True, check=False)
+        print("Mission Control login task removed. Configuration was preserved.")
+        return
+    service_path = Path.home() / ".config" / "systemd" / "user" / "mission-control-agent.service"
+    subprocess.run(["systemctl", "--user", "disable", "--now", service_path.name], capture_output=True, check=False)
+    if service_path.exists():
+        service_path.unlink()
+    subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, check=False)
+    print("Mission Control user service removed. Configuration was preserved.")
+
+
+def service_status(config_path: Path) -> int:
+    print(f"Configuration: {'ready' if config_path.expanduser().is_file() else 'missing'} ({config_path.expanduser()})")
+    if sys.platform == "darwin":
+        result = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{service_name()}"], capture_output=True, text=True, check=False)
+    elif os.name == "nt":
+        result = subprocess.run(["schtasks", "/Query", "/TN", service_name(), "/FO", "LIST"], capture_output=True, text=True, check=False)
+    else:
+        result = subprocess.run(["systemctl", "--user", "is-active", "mission-control-agent.service"], capture_output=True, text=True, check=False)
+    print(result.stdout.strip() if result.returncode == 0 else "Background service is not installed or not running.")
+    return result.returncode
+
+
 def run(config_path: Path, once: bool = False) -> None:
     config = load_config(config_path)
     roots = [str(Path(root).expanduser().resolve()) for root in config["allowed_roots"]]
@@ -266,12 +364,18 @@ def run(config_path: Path, once: bool = False) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Secure local runner for Mission Control")
-    parser.add_argument("action", choices=("configure", "run", "once"))
+    parser.add_argument("action", choices=("configure", "install", "uninstall", "status", "run", "once"))
     parser.add_argument("--config", type=Path, default=CONFIG_FILE)
     args = parser.parse_args()
     try:
         if args.action == "configure":
             configure(args.config)
+        elif args.action == "install":
+            install_service(args.config)
+        elif args.action == "uninstall":
+            uninstall_service()
+        elif args.action == "status":
+            return service_status(args.config)
         else:
             run(args.config, once=args.action == "once")
         return 0
