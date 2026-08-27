@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Mission Control local command runner.
 
-The runner polls an owner-approved Mission Control queue, executes only inside
-locally configured roots, and returns bounded stdout/stderr. It has no inbound
-port and never accepts commands directly from the network.
+The runner polls an owner-approved Mission Control queue, starts commands only
+in locally configured roots, and returns bounded stdout/stderr. It has no
+inbound port and never accepts commands directly from the network. The root
+check is a working-directory guardrail, not an operating-system sandbox.
 """
 
 from __future__ import annotations
@@ -29,8 +30,8 @@ CONFIG_DIR = Path.home() / ".mission-control"
 CONFIG_FILE = CONFIG_DIR / "agent.json"
 MAX_OUTPUT = 200_000
 BLOCKED_PATTERNS = [
-    r"\brm\s+-[^\n]*r[^\n]*f\b",
-    r"\bremove-item\b[^\n]*-recurse\b[^\n]*-force\b",
+    r"\brm\b(?=[^\n]*(?:-[a-z]*r|--recursive))",
+    r"\bremove-item\b(?=[^\n]*-recurse)",
     r"\bformat(?:\.com)?\b",
     r"\bmkfs(?:\.|\s)",
     r"\bdiskpart\b",
@@ -40,7 +41,8 @@ BLOCKED_PATTERNS = [
     r"\bgit\s+reset\s+--hard\b",
     r"\bgit\s+clean\s+-[^\n]*f",
     r"\breg\s+delete\b",
-    r"\bdel\s+\/s\s+\/q\b",
+    r"\bdel\b(?=[^\n]*\/s)",
+    r"\b(?:powershell|pwsh)\b[^\n]*-(?:encodedcommand|enc)\b",
 ]
 
 
@@ -280,4 +282,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

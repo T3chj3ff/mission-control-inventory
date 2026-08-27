@@ -10,9 +10,11 @@ paths and Git remote URLs, so review it before sharing it anywhere.
 ## Secure command runner
 
 Mission Control can dispatch owner-approved commands to an enrolled computer.
-The runner opens no inbound port: it polls the private job queue, executes only
-inside roots configured on that computer, blocks destructive command patterns,
-and returns bounded stdout/stderr to the command ledger.
+The runner opens no inbound port: it polls the private job queue, starts work
+only in roots configured on that computer, blocks destructive command patterns,
+and returns bounded stdout/stderr to the command ledger. The root check is a
+working-directory guardrail, not an operating-system sandbox; commands retain
+the local runner account's permissions.
 
 After choosing **Execute → Enroll machine** in Mission Control, configure the
 runner without putting tokens in shell history:
