@@ -1,2 +1,4 @@
 mission-control-projects*.json
 .DS_Store
+__pycache__/
+agent.json

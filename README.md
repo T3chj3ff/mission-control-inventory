@@ -7,6 +7,27 @@ The scanners only inspect folders you explicitly provide. They write the result
 to your computer and never upload it. The generated inventory may contain local
 paths and Git remote URLs, so review it before sharing it anywhere.
 
+## Secure command runner
+
+Mission Control can dispatch owner-approved commands to an enrolled computer.
+The runner opens no inbound port: it polls the private job queue, executes only
+inside roots configured on that computer, blocks destructive command patterns,
+and returns bounded stdout/stderr to the command ledger.
+
+After choosing **Execute → Enroll machine** in Mission Control, configure the
+runner without putting tokens in shell history:
+
+```bash
+python3 mission_control_agent.py configure
+python3 mission_control_agent.py run
+```
+
+The first command securely prompts for the one-time machine token, the private
+Sites connection token when required, and allowed folders. Configuration is
+stored in `~/.mission-control/agent.json` with user-only permissions where the
+operating system supports them. Revoke a machine from Mission Control at any
+time to invalidate its machine token and cancel queued work.
+
 ## macOS — clone, update, and scan
 
 Open Terminal and paste this entire command:
@@ -43,5 +64,6 @@ if (Test-Path "$HOME\mission-control-inventory\.git") { git -C "$HOME\mission-co
 - Git branch, dirty-file count, last commit time, and origin URL
 - A lightweight tech-stack guess based on common project files
 
-No file contents, credentials, environment variables, or Git history are copied.
-The source repository contains scanner code only—never generated inventory files.
+No file contents, credentials, environment variables, or Git history are copied
+by the inventory scanners. The source repository contains code only—never
+generated inventory files or runner credentials.
