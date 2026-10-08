@@ -67,6 +67,38 @@ if (Test-Path "$HOME\mission-control-inventory\.git") { git -C "$HOME\mission-co
 
 ## What is collected
 
+## RepoGraph evidence for Mission Control
+
+Install RepoGraph separately and run `repograph index` in the repository you
+want to review. This optional exporter reads its published index; it does not
+index, execute tests, enroll a runner or upload data.
+
+```text
+python mission_control_evidence.py "YOUR_REPOSITORY_ROOT" --file "src/example.py" --output "repograph-evidence-new.json"
+```
+
+Repeat `--file` for up to 20 files, omit it for metadata only, and use
+`--repograph "ABSOLUTE_CLI_PATH"` if the executable is not on PATH. Python 3.9+
+and Git are required. Select a new output filename; existing files are refused.
+
+In Mission Control, open **Projects → Repository evidence**, select the project,
+and choose **Review evidence file**. Inspect the checkout, scope hashes, analysis
+gaps and capture warnings, confirm the project mapping, then import. The Site
+stores private snapshot history and includes the newest capture in mission
+handoffs. Older captures cannot displace newer ones; identical imports deduplicate.
+
+The file contains commit/build identities, index counts, declared language gaps,
+relative scope paths, SHA-256 hashes and matched-history counts. It excludes
+absolute local roots, remotes, source text, history prose and commands. Relative
+paths can still reveal project information: review before sharing. Imported
+metadata is self-reported and does not authenticate the machine or certify
+checks. Dirty state is not a full worktree fingerprint. Verify repository identity
+and scope hashes before editing; static relationships cannot prove change safety.
+
+Run exporter tests with `python -m unittest -v test_mission_control_evidence.py`.
+
+## Inventory fields
+
 - Project name and local folder path
 - Machine name
 - Git branch, dirty-file count, last commit time, and origin URL
